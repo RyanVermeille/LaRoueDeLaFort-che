@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Roue de la Fortâche</title>
+</head>
+<body>
+
+<h1>La Roue de la Fortâche</h1>
+
+<section id="team-section">
+  <h2>Membres de l'équipe</h2>
+  <form id="add-member-form">
+    <input type="text" id="member-name-input" placeholder="Nom du membre" required>
+    <button type="submit">Ajouter</button>
+  </form>
+  <ul id="member-list"></ul>
+</section>
+
+<section id="wheel-section">
+  <svg id="wheel" width="400" height="400" viewBox="0 0 400 400" style="transform-origin: 50% 50%;"></svg>
+  <div id="pointer">&#9660;</div>
+  <br>
+  <button id="spin-button">Tourner</button>
+</section>
+
+<section id="result-section">
+  <h2>Résultat</h2>
+  <p id="result">Aucun tirage pour l'instant.</p>
+</section>
+
+<script>
+(function () {
+  'use strict';
+
+  const STORAGE_KEY = 'roue-fortache-members';
+
+  let members = loadMembers();
+  let currentRotation = 0;
+  let isSpinning = false;
+
+  const memberListEl = document.getElementById('member-list');
+  const addMemberForm = document.getElementById('add-member-form');
+  const memberNameInput = document.getElementById('member-name-input');
+  const wheelEl = document.getElementById('wheel');
+  const spinButton = document.getElementById('spin-button');
+  const resultEl = document.getElementById('result');
+
+  const WHEEL_SIZE = 400;
+  const CENTER = WHEEL_SIZE / 2;
+  const RADIUS = WHEEL_SIZE / 2 - 10;
+  const COLORS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff'];
+
+  function loadMembers() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {
+      // ignore corrupted storage
+    }
+    return ['Alice', 'Bob', 'Charlie'];
+  }
+
+  function saveMembers() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
+  }
+
+  function renderMemberList() {
+    memberListEl.innerHTML = '';
+    members.forEach((name, index) => {
+      const li = document.createElement('li');
+      li.textContent = name + ' ';
+      const removeBtn = document.createElement('button');
+      removeBtn.textContent = 'Supprimer';
+      removeBtn.type = 'button';
+      removeBtn.addEventListener('click', () => removeMember(index));
+      li.appendChild(removeBtn);
+      memberListEl.appendChild(li);
+    });
+  }
+
+  function addMember(name) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    members.push(trimmed);
+    saveMembers();
+    renderMemberList();
+    renderWheel();
+  }
+
+  function removeMember(index) {
+    members.splice(index, 1);
+    saveMembers();
+    renderMemberList();
+    renderWheel();
+  }
+
+  function polarToCartesian(cx, cy, r, angleDeg) {
+    const angleRad = (angleDeg - 90) * Math.PI / 180;
+    return {
+      x: cx + r * Math.cos(angleRad),
+      y: cy + r * Math.sin(angleRad)
+    };
+  }
+
+  function renderWheel() {
+    wheelEl.innerHTML = '';
+    const n = members.length;
+
+    if (n === 0) {
+      return;
+    }
+
+    if (n === 1) {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', CENTER);
+      circle.setAttribute('cy', CENTER);
+      circle.setAttribute('r', RADIUS);
+      circle.setAttribute('fill', COLORS[0]);
+      wheelEl.appendChild(circle);
+      addLabel(members[0], 0, 360);
+      return;
+    }
+
+    const sliceAngle = 360 / n;
+
+    members.forEach((name, i) => {
+      const startAngle = i * sliceAngle;
+      const endAngle = startAngle + sliceAngle;
+      const start = polarToCartesian(CENTER, CENTER, RADIUS, startAngle);
+      const end = polarToCartesian(CENTER, CENTER, RADIUS, endAngle);
+      const largeArcFlag = sliceAngle > 180 ? 1 : 0;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      const d = [
+        'M', CENTER, CENTER,
+        'L', start.x, start.y,
+        'A', RADIUS, RADIUS, 0, largeArcFlag, 1, end.x, end.y,
+        'Z'
+      ].join(' ');
+      path.setAttribute('d', d);
+      path.setAttribute('fill', COLORS[i % COLORS.length]);
+      path.setAttribute('stroke', '#fff');
+      path.setAttribute('stroke-width', '1');
+      wheelEl.appendChild(path);
+
+      addLabel(name, startAngle, endAngle);
+    });
+  }
+
+  function addLabel(name, startAngle, endAngle) {
+    const midAngle = (startAngle + endAngle) / 2;
+    const labelPos = polarToCartesian(CENTER, CENTER, RADIUS * 0.65, midAngle);
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', labelPos.x);
+    text.setAttribute('y', labelPos.y);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'middle');
+    text.setAttribute('font-size', '14');
+    text.textContent = name;
+    wheelEl.appendChild(text);
+  }
+
+  function spin() {
+    if (isSpinning) return;
+    const n = members.length;
+    if (n === 0) {
+      resultEl.textContent = 'Ajoutez au moins un membre avant de tourner la roue.';
+      return;
+    }
+
+    isSpinning = true;
+    resultEl.textContent = 'La roue tourne...';
+
+    const winnerIndex = Math.floor(Math.random() * n);
+    const sliceAngle = 360 / n;
+
+    const winnerSliceCenter = winnerIndex * sliceAngle + sliceAngle / 2;
+
+    const extraTurns = 5 * 360;
+    const targetRotation = extraTurns - winnerSliceCenter;
+
+    currentRotation += targetRotation - (currentRotation % 360);
+
+    wheelEl.style.transition = 'transform 4s cubic-bezier(0.17, 0.67, 0.35, 1)';
+    wheelEl.style.transform = 'rotate(' + currentRotation + 'deg)';
+
+    setTimeout(() => {
+      isSpinning = false;
+      resultEl.textContent = 'Membre sélectionné : ' + members[winnerIndex];
+    }, 4000);
+  }
+
+  addMemberForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    addMember(memberNameInput.value);
+    memberNameInput.value = '';
+    memberNameInput.focus();
+  });
+
+  spinButton.addEventListener('click', spin);
+
+  renderMemberList();
+  renderWheel();
+})();
+</script>
+
+</body>
+</html>
