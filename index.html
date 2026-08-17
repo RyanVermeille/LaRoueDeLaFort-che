@@ -358,6 +358,61 @@
     flex: 0 0 auto;
   }
 
+  .weight-btn {
+    flex: 0 0 auto;
+    width: 1.5em;
+    height: 1.5em;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.25);
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.85em;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .weight-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.4); }
+  .weight-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .member-limit-message {
+    margin: 0 0 8px;
+    color: #ff9d9d;
+    font-size: 0.85em;
+    flex: 0 0 auto;
+  }
+
+  .reset-all-btn {
+    position: fixed;
+    top: clamp(10px, 1.6vh, 18px);
+    right: clamp(10px, 1.6vw, 20px);
+    z-index: 50;
+    border: 3px solid #7a0000;
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: clamp(11px, 1vw, 14px);
+    color: #fff;
+    background: radial-gradient(circle at 30% 30%, #ff5252, #c40000 70%);
+    box-shadow: 0 0 0 4px rgba(255, 0, 0, 0.15), 0 6px 16px rgba(180, 0, 0, 0.6);
+    cursor: pointer;
+  }
+
+  .reset-all-btn:hover { filter: brightness(1.1); }
+  .reset-all-btn:active { transform: scale(0.96); }
+
+  .blackout-overlay {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9999;
+  }
+
   .assign-task-form {
     display: flex;
     flex-direction: column;
@@ -413,6 +468,8 @@
   <div class="spotlight" aria-hidden="true"></div>
   <div class="curtain curtain-left" aria-hidden="true"></div>
   <div class="curtain curtain-right" aria-hidden="true"></div>
+  <button type="button" id="reset-all-btn" class="reset-all-btn">Tout réinitialiser</button>
+  <div id="blackout-overlay" class="blackout-overlay" aria-hidden="true"></div>
 
   <header class="stage-header">
     <h1 class="show-title">LA ROUE DE LA FORTÂCHE</h1>
@@ -446,8 +503,9 @@
         <h2 class="panel-title">Équipe</h2>
         <form id="add-member-form" class="add-member-form">
           <input type="text" id="member-name-input" placeholder="Ajouter un membre..." required>
-          <button type="submit" class="round-btn" aria-label="Ajouter">+</button>
+          <button type="submit" id="add-member-btn" class="round-btn" aria-label="Ajouter">+</button>
         </form>
+        <p id="member-limit-message" class="member-limit-message" style="display: none;">Maximum 15 participants</p>
         <ul id="member-list" class="member-list"></ul>
       </div>
       <div class="panel task-card">
@@ -468,12 +526,11 @@
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  const MEMBERS_STORAGE_KEY = 'roue-fortache-members';
-  const JOURNAL_STORAGE_KEY = 'roue-fortache-journal';
-
   const DEFAULT_WEIGHT = 10;
   const WEIGHT_DECREMENT = 2;
   const MIN_WEIGHT = 1;
+  const MAX_WEIGHT = 20;
+  const MAX_MEMBERS = 15;
 
   let members = loadMembers();
   let journal = loadJournal();
@@ -482,7 +539,11 @@
 
   const memberListEl = document.getElementById('member-list');
   const addMemberForm = document.getElementById('add-member-form');
+  const addMemberBtn = document.getElementById('add-member-btn');
   const memberNameInput = document.getElementById('member-name-input');
+  const memberLimitMessageEl = document.getElementById('member-limit-message');
+  const resetAllBtn = document.getElementById('reset-all-btn');
+  const blackoutOverlayEl = document.getElementById('blackout-overlay');
   const wheelEl = document.getElementById('wheel');
   const bulbRingEl = document.getElementById('bulb-ring');
   const assignTaskForm = document.getElementById('assign-task-form');
@@ -509,21 +570,10 @@
   // Palette de couleurs vives, choisies pour rester lisibles sur fond sombre.
   const COLORS = ['#ff4d6d', '#ff9f1c', '#ffd60a', '#8ac926', '#1982c4', '#6a4c93', '#ff70a6', '#00c2a8', '#f15bb5', '#4cc9f0', '#f4a261', '#c77dff'];
 
-  function loadMembers() {
-    try {
-      const raw = localStorage.getItem(MEMBERS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          return parsed.map((m) => {
-            if (typeof m === 'string') return { name: m, weight: DEFAULT_WEIGHT };
-            return { name: m.name, weight: typeof m.weight === 'number' ? m.weight : DEFAULT_WEIGHT };
-          });
-        }
-      }
-    } catch (e) {
-      // ignore corrupted storage
-    }
+  // Prototype sans persistance (phase 4) : tout repart de zéro à chaque
+  // rechargement de page, ces fonctions ne font plus que fournir l'état de
+  // départ en mémoire.
+  function getDefaultMembers() {
     return [
       { name: 'Alice', weight: DEFAULT_WEIGHT },
       { name: 'Bob', weight: DEFAULT_WEIGHT },
@@ -531,25 +581,12 @@
     ];
   }
 
-  function saveMembers() {
-    localStorage.setItem(MEMBERS_STORAGE_KEY, JSON.stringify(members));
+  function loadMembers() {
+    return getDefaultMembers();
   }
 
   function loadJournal() {
-    try {
-      const raw = localStorage.getItem(JOURNAL_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      // ignore corrupted storage
-    }
     return [];
-  }
-
-  function saveJournal() {
-    localStorage.setItem(JOURNAL_STORAGE_KEY, JSON.stringify(journal));
   }
 
   // Couleur déterministe à partir du nom : le même nom donne toujours la
@@ -584,9 +621,25 @@
       nameSpan.className = 'pill-name';
       nameSpan.textContent = member.name;
 
+      const minusBtn = document.createElement('button');
+      minusBtn.type = 'button';
+      minusBtn.className = 'weight-btn';
+      minusBtn.textContent = '−';
+      minusBtn.setAttribute('aria-label', 'Diminuer le poids de ' + member.name);
+      minusBtn.disabled = member.weight <= MIN_WEIGHT;
+      minusBtn.addEventListener('click', () => adjustWeight(index, -1));
+
       const weightBadge = document.createElement('span');
       weightBadge.className = 'weight-badge';
       weightBadge.textContent = member.weight;
+
+      const plusBtn = document.createElement('button');
+      plusBtn.type = 'button';
+      plusBtn.className = 'weight-btn';
+      plusBtn.textContent = '+';
+      plusBtn.setAttribute('aria-label', 'Augmenter le poids de ' + member.name);
+      plusBtn.disabled = member.weight >= MAX_WEIGHT;
+      plusBtn.addEventListener('click', () => adjustWeight(index, 1));
 
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
@@ -596,26 +649,47 @@
       removeBtn.addEventListener('click', () => removeMember(index));
 
       li.appendChild(nameSpan);
+      li.appendChild(minusBtn);
       li.appendChild(weightBadge);
+      li.appendChild(plusBtn);
       li.appendChild(removeBtn);
       memberListEl.appendChild(li);
     });
   }
 
-  function addMember(name) {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    members.push({ name: trimmed, weight: DEFAULT_WEIGHT });
-    saveMembers();
+  // Réglage manuel du poids (phase 4) : coexiste avec la décrémentation
+  // automatique après tirage dans spin(), ne la remplace pas. Borné à
+  // [MIN_WEIGHT, MAX_WEIGHT], les boutons se désactivent aux bornes.
+  function adjustWeight(index, delta) {
+    const member = members[index];
+    if (!member) return;
+    member.weight = Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, member.weight + delta));
     renderMemberList();
     renderWheel();
   }
 
-  function removeMember(index) {
-    members.splice(index, 1);
-    saveMembers();
+  function updateMemberLimitUI() {
+    const limitReached = members.length >= MAX_MEMBERS;
+    addMemberBtn.disabled = limitReached;
+    memberNameInput.disabled = limitReached;
+    memberLimitMessageEl.style.display = limitReached ? '' : 'none';
+  }
+
+  function addMember(name) {
+    if (members.length >= MAX_MEMBERS) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    members.push({ name: trimmed, weight: DEFAULT_WEIGHT });
     renderMemberList();
     renderWheel();
+    updateMemberLimitUI();
+  }
+
+  function removeMember(index) {
+    members.splice(index, 1);
+    renderMemberList();
+    renderWheel();
+    updateMemberLimitUI();
   }
 
   function polarToCartesian(cx, cy, r, angleDeg) {
@@ -824,10 +898,8 @@
     setTimeout(() => {
       const winner = members[winnerIndex];
       winner.weight = Math.max(MIN_WEIGHT, winner.weight - WEIGHT_DECREMENT);
-      saveMembers();
 
       journal.push({ task: taskName, member: winner.name, timestamp: Date.now() });
-      saveJournal();
 
       renderMemberList();
       renderWheel();
@@ -843,8 +915,47 @@
     }, 4000);
   }
 
+  // Effet « détonateur » du bouton Tout réinitialiser (phase 4) : coupure
+  // instantanée au noir (opacité 1 sans transition), réinitialisation de
+  // l'état pendant que l'écran est noir, puis fondu progressif de 3s qui
+  // révèle l'application repartie de zéro.
+  function resetEverything() {
+    blackoutOverlayEl.style.transition = 'none';
+    blackoutOverlayEl.style.opacity = '1';
+    blackoutOverlayEl.style.pointerEvents = 'auto';
+    // Force le navigateur à appliquer l'opacité 1 immédiate avant qu'on
+    // n'attache la transition du fondu de sortie ci-dessous.
+    void blackoutOverlayEl.offsetHeight;
+
+    members = getDefaultMembers();
+    journal = [];
+    currentRotation = 0;
+    isSpinning = false;
+    spinButton.disabled = false;
+    taskNameInput.value = '';
+    resultStatusEl.textContent = "Aucun tirage pour l'instant.";
+    resultWinnerEl.textContent = '';
+    wheelEl.style.transition = 'none';
+    wheelEl.style.transform = 'rotate(0deg)';
+
+    renderMemberList();
+    renderWheel();
+    renderJournal();
+    updateMemberLimitUI();
+
+    requestAnimationFrame(() => {
+      blackoutOverlayEl.style.transition = 'opacity 3s ease';
+      blackoutOverlayEl.style.opacity = '0';
+    });
+
+    setTimeout(() => {
+      blackoutOverlayEl.style.pointerEvents = 'none';
+    }, 3000);
+  }
+
   addMemberForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (members.length >= MAX_MEMBERS) return;
     addMember(memberNameInput.value);
     memberNameInput.value = '';
     memberNameInput.focus();
@@ -857,11 +968,17 @@
     spin(taskName);
   });
 
+  resetAllBtn.addEventListener('click', () => {
+    if (!confirm("Tout réinitialiser ? Le journal et l'équipe repartiront de zéro.")) return;
+    resetEverything();
+  });
+
   setupSvgViewBoxes();
   renderBulbRing();
   renderMemberList();
   renderWheel();
   renderJournal();
+  updateMemberLimitUI();
 })();
 </script>
 

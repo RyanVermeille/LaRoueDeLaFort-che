@@ -329,3 +329,122 @@ mécanique de tirage pondéré de la phase 2 (vérifié géométriquement par
 test). Le curseur pointe désormais correctement la part gagnante. Couleurs
 cohérentes entre équipe, roue et journal. Testé sur plusieurs résolutions et
 avec un nombre de membres variable.
+
+## Phase 4 — Retrait de la persistance, réglage manuel des poids, limite de participants, réinitialisation spectaculaire (2026-08-17)
+
+### Demande
+
+Quatre adaptations, sans toucher à la logique de tirage validée en phase 2
+(gagnant tiré D'ABORD par tirage pondéré, PUIS animation) ni au style « fête
+foraine » de la phase 3 :
+
+- supprimer toute la persistance `localStorage` (membres, poids, journal) —
+  le prototype doit repartir de zéro à chaque rechargement ;
+- ajouter un réglage manuel du poids de chaque membre (boutons « − » / « + »
+  par pastille), borné entre 1 et 20, en plus de la décrémentation
+  automatique existante après tirage (les deux mécanismes coexistent) ;
+- limiter l'équipe à 15 participants, avec message et bouton d'ajout
+  désactivé une fois la limite atteinte ;
+- un gros bouton rouge « TOUT RÉINITIALISER » qui coupe l'écran au noir
+  instantanément, réinitialise tout l'état pendant que l'écran est noir, puis
+  fait réapparaître l'application en fondu sur environ 3 secondes.
+
+### Ce qui a été construit
+
+- **Suppression complète de `localStorage`** : `loadMembers()` et
+  `loadJournal()` retournent désormais directement des valeurs par défaut en
+  mémoire (`getDefaultMembers()` pour les membres, `[]` pour le journal),
+  sans plus jamais lire ni écrire dans le navigateur. Les fonctions
+  `saveMembers()` et `saveJournal()` ainsi que tous leurs appels (ajout,
+  suppression de membre, fin de tirage) ont été supprimés — plus aucune trace
+  de `localStorage` dans le fichier.
+- **Réglage manuel du poids** : chaque pastille de membre affiche maintenant
+  deux boutons ronds « − » et « + » de part et d'autre du badge de poids.
+  Une nouvelle fonction `adjustWeight(index, delta)` modifie le poids d'une
+  unité, borné par `Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, ...))` (nouvelle
+  constante `MAX_WEIGHT = 20`, `MIN_WEIGHT = 1` déjà existante), puis
+  redessine la liste et la roue immédiatement. Les boutons se désactivent
+  eux-mêmes aux bornes (`disabled` posé directement à partir du poids courant
+  dans `renderMemberList()`). Ce réglage ne remplace pas la décrémentation
+  automatique de `WEIGHT_DECREMENT` après un tirage dans `spin()` : les deux
+  cohabitent sans conflit, un poids pouvant être ajusté manuellement entre
+  deux tirages.
+- **Limite de 15 participants** : nouvelle constante `MAX_MEMBERS = 15`.
+  `addMember()` refuse tout ajout au-delà de cette limite, et une fonction
+  `updateMemberLimitUI()` désactive à la fois le champ de saisie et le
+  bouton « + » et affiche le message « Maximum 15 participants »
+  (`#member-limit-message`, masqué par défaut) dès que la limite est
+  atteinte. Appelée après chaque ajout/suppression de membre et au
+  chargement initial.
+- **Bouton « Tout réinitialiser »** : gros bouton rond rouge en
+  `position: fixed` en haut à droite de l'écran (`.reset-all-btn`, dégradé
+  radial rouge vif façon détonateur), avec une confirmation `confirm()`
+  avant de déclencher l'effet. Un `<div id="blackout-overlay">` plein écran
+  (`position: fixed; inset: 0; z-index: 9999`) sert d'overlay noir. Au clic,
+  `resetEverything()` :
+  1. passe l'overlay à `opacity: 1` avec `transition: none` (coupure
+     instantanée), et force un reflow (`void blackoutOverlayEl.offsetHeight`)
+     pour garantir que ce changement est bien appliqué avant l'étape 3 ;
+  2. réinitialise tout l'état en mémoire pendant que l'écran est noir :
+     `members = getDefaultMembers()`, `journal = []`, remise à zéro de la
+     rotation de la roue, du texte de résultat et du champ de tâche, puis
+     redessine membres/roue/journal ;
+  3. sur la frame suivante (`requestAnimationFrame`), rétablit la transition
+     CSS (`transition: opacity 3s ease`) et ramène l'opacité à 0, révélant
+     l'application déjà réinitialisée en fondu progressif ;
+  4. après 3 secondes, repasse `pointer-events` à `none` sur l'overlay pour
+     ne plus bloquer les clics une fois le fondu terminé.
+
+### Choix et compromis
+
+- **Persistance retirée : limite assumée du prototype**, pas une régression.
+  La persistance de la phase 1/2 avait été ajoutée spontanément « pour ne pas
+  perdre la liste pendant les tests manuels », mais n'avait jamais été
+  demandée explicitement ; la retirer maintenant recentre le prototype sur sa
+  vocation de démonstration rejouable à volonté (chaque rechargement — ou
+  chaque clic sur « Tout réinitialiser » — repart d'un état propre), au prix
+  explicite de perdre l'équipe et le journal à chaque fermeture d'onglet.
+- **Bouton de réinitialisation en position fixe, hors de la grille des trois
+  colonnes** : plutôt que de l'intégrer dans un des panneaux existants, il
+  est positionné en `position: fixed` au-dessus de tout le reste
+  (`z-index: 50`), pour rester visible et accessible quel que soit
+  l'agencement des colonnes — et ne pas devoir être déplacé lors du
+  réagencement de mise en page prévu en phase 5.
+- **`confirm()` natif du navigateur** pour la confirmation avant
+  réinitialisation, plutôt qu'une modale personnalisée : suffisant pour un
+  prototype, évite d'ajouter un nouveau composant d'UI pour une action
+  optionnelle et ponctuelle.
+- **Reflow forcé (`offsetHeight`) avant d'attacher la transition de fondu** :
+  sans ce forçage, le navigateur pourrait fusionner le changement d'opacité
+  instantané et la pose de la transition dans le même cycle de rendu, et
+  animer l'apparition du noir au lieu de la rendre instantanée — casserait
+  l'effet « coupure de courant » demandé.
+- **Boutons « − » / « + » désactivés directement via l'attribut `disabled`
+  posé au rendu**, plutôt qu'un `pointer-events: none` en CSS conditionnel :
+  plus simple, cohérent avec le reste du fichier (boutons d'ajout/de tâche
+  déjà gérés ainsi), et bénéficie gratuitement du style `:disabled` déjà
+  défini pour les autres boutons ronds.
+
+### Bugs rencontrés et corrections
+
+Aucun bug bloquant. Vérifié via un script Playwright dédié (navigation
+directe sur `index.html`, sans serveur) : le poids d'un membre monte
+jusqu'à 20 puis le bouton « + » se bloque, redescend jusqu'à 1 puis le
+bouton « − » se bloque ; l'ajout de membres s'arrête à 15 avec le champ et
+le bouton désactivés et le message affiché ; l'overlay passe à une opacité
+proche de 1 immédiatement après le clic sur « Tout réinitialiser » (état
+remis à 3 membres par défaut pendant que l'écran est noir, journal vidé),
+puis retombe à 0 après le fondu ; un rechargement de page complet ramène
+bien l'équipe par défaut (Alice/Bob/Charlie) et un journal vide, confirmant
+l'absence totale de persistance ; aucune erreur console dans tous les
+scénarios.
+
+### État à la fin de la phase 4
+
+Prototype sans aucune persistance, avec réglage manuel du poids par membre
+(coexistant avec la décrémentation automatique), équipe plafonnée à 15
+participants, et bouton de réinitialisation complète avec effet de coupure
+de courant. Logique de tirage pondéré et style visuel de la phase 3
+inchangés. Mise en page encore identique à la phase 3 à ce stade — le
+réagencement en trois colonnes (roue au centre) est traité séparément en
+phase 5.
