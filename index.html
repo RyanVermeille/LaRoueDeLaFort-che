@@ -11,6 +11,13 @@
 
 <section id="team-section">
   <h2>Membres de l'équipe</h2>
+  <p>
+    Chaque membre a un poids qui détermine la taille de sa part sur la roue
+    (donc ses chances d'être tiré). À chaque tâche reçue, le poids d'un
+    membre diminue de <span id="decrement-info"></span> (jusqu'à un minimum
+    de <span id="min-weight-info"></span>) : sa part rétrécit et la roue se
+    rééquilibre automatiquement en faveur des autres.
+  </p>
   <form id="add-member-form">
     <input type="text" id="member-name-input" placeholder="Nom du membre" required>
     <button type="submit">Ajouter</button>
@@ -22,7 +29,10 @@
   <svg id="wheel" width="400" height="400" viewBox="0 0 400 400" style="transform-origin: 50% 50%;"></svg>
   <div id="pointer">&#9660;</div>
   <br>
-  <button id="spin-button">Tourner</button>
+  <form id="assign-task-form">
+    <input type="text" id="task-name-input" placeholder="Nom de la tâche" required>
+    <button type="submit" id="spin-button">Tourner la roue</button>
+  </form>
 </section>
 
 <section id="result-section">
@@ -30,13 +40,25 @@
   <p id="result">Aucun tirage pour l'instant.</p>
 </section>
 
+<section id="journal-section">
+  <h2>Journal des tâches assignées</h2>
+  <p id="journal-empty-message">Aucune tâche assignée pour l'instant.</p>
+  <ol id="journal-list"></ol>
+</section>
+
 <script>
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'roue-fortache-members';
+  const MEMBERS_STORAGE_KEY = 'roue-fortache-members';
+  const JOURNAL_STORAGE_KEY = 'roue-fortache-journal';
+
+  const DEFAULT_WEIGHT = 10;
+  const WEIGHT_DECREMENT = 2;
+  const MIN_WEIGHT = 1;
 
   let members = loadMembers();
+  let journal = loadJournal();
   let currentRotation = 0;
   let isSpinning = false;
 
@@ -44,8 +66,17 @@
   const addMemberForm = document.getElementById('add-member-form');
   const memberNameInput = document.getElementById('member-name-input');
   const wheelEl = document.getElementById('wheel');
+  const assignTaskForm = document.getElementById('assign-task-form');
+  const taskNameInput = document.getElementById('task-name-input');
   const spinButton = document.getElementById('spin-button');
   const resultEl = document.getElementById('result');
+  const journalListEl = document.getElementById('journal-list');
+  const journalEmptyMessageEl = document.getElementById('journal-empty-message');
+  const decrementInfoEl = document.getElementById('decrement-info');
+  const minWeightInfoEl = document.getElementById('min-weight-info');
+
+  decrementInfoEl.textContent = WEIGHT_DECREMENT;
+  minWeightInfoEl.textContent = MIN_WEIGHT;
 
   const WHEEL_SIZE = 400;
   const CENTER = WHEEL_SIZE / 2;
@@ -54,23 +85,52 @@
 
   function loadMembers() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
+      const raw = localStorage.getItem(MEMBERS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.map((m) => {
+            if (typeof m === 'string') return { name: m, weight: DEFAULT_WEIGHT };
+            return { name: m.name, weight: typeof m.weight === 'number' ? m.weight : DEFAULT_WEIGHT };
+          });
+        }
+      }
     } catch (e) {
       // ignore corrupted storage
     }
-    return ['Alice', 'Bob', 'Charlie'];
+    return [
+      { name: 'Alice', weight: DEFAULT_WEIGHT },
+      { name: 'Bob', weight: DEFAULT_WEIGHT },
+      { name: 'Charlie', weight: DEFAULT_WEIGHT }
+    ];
   }
 
   function saveMembers() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
+    localStorage.setItem(MEMBERS_STORAGE_KEY, JSON.stringify(members));
+  }
+
+  function loadJournal() {
+    try {
+      const raw = localStorage.getItem(JOURNAL_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      // ignore corrupted storage
+    }
+    return [];
+  }
+
+  function saveJournal() {
+    localStorage.setItem(JOURNAL_STORAGE_KEY, JSON.stringify(journal));
   }
 
   function renderMemberList() {
     memberListEl.innerHTML = '';
-    members.forEach((name, index) => {
+    members.forEach((member, index) => {
       const li = document.createElement('li');
-      li.textContent = name + ' ';
+      li.textContent = member.name + ' — poids : ' + member.weight + ' ';
       const removeBtn = document.createElement('button');
       removeBtn.textContent = 'Supprimer';
       removeBtn.type = 'button';
@@ -83,7 +143,7 @@
   function addMember(name) {
     const trimmed = name.trim();
     if (!trimmed) return;
-    members.push(trimmed);
+    members.push({ name: trimmed, weight: DEFAULT_WEIGHT });
     saveMembers();
     renderMemberList();
     renderWheel();
@@ -104,6 +164,34 @@
     };
   }
 
+  // Calcule les bornes angulaires de chaque part, proportionnelles au poids
+  // de chaque membre. Utilisé à la fois pour dessiner la roue et pour situer
+  // la part du gagnant tiré au sort.
+  function computeSlices() {
+    const total = members.reduce((sum, m) => sum + m.weight, 0);
+    let cursor = 0;
+    return members.map((m) => {
+      const sliceAngle = total > 0 ? (m.weight / total) * 360 : 360 / members.length;
+      const startAngle = cursor;
+      const endAngle = cursor + sliceAngle;
+      cursor = endAngle;
+      return { name: m.name, weight: m.weight, startAngle: startAngle, endAngle: endAngle };
+    });
+  }
+
+  // Tirage aléatoire pondéré : chaque membre a une probabilité d'être
+  // choisi proportionnelle à son poids courant.
+  function weightedRandomIndex(weights) {
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    if (total <= 0) return Math.floor(Math.random() * weights.length);
+    let r = Math.random() * total;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r < 0) return i;
+    }
+    return weights.length - 1;
+  }
+
   function renderWheel() {
     wheelEl.innerHTML = '';
     const n = members.length;
@@ -119,18 +207,16 @@
       circle.setAttribute('r', RADIUS);
       circle.setAttribute('fill', COLORS[0]);
       wheelEl.appendChild(circle);
-      addLabel(members[0], 0, 360);
+      addLabel(members[0].name, 0, 360);
       return;
     }
 
-    const sliceAngle = 360 / n;
+    const slices = computeSlices();
 
-    members.forEach((name, i) => {
-      const startAngle = i * sliceAngle;
-      const endAngle = startAngle + sliceAngle;
-      const start = polarToCartesian(CENTER, CENTER, RADIUS, startAngle);
-      const end = polarToCartesian(CENTER, CENTER, RADIUS, endAngle);
-      const largeArcFlag = sliceAngle > 180 ? 1 : 0;
+    slices.forEach((slice, i) => {
+      const start = polarToCartesian(CENTER, CENTER, RADIUS, slice.startAngle);
+      const end = polarToCartesian(CENTER, CENTER, RADIUS, slice.endAngle);
+      const largeArcFlag = (slice.endAngle - slice.startAngle) > 180 ? 1 : 0;
 
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       const d = [
@@ -145,7 +231,7 @@
       path.setAttribute('stroke-width', '1');
       wheelEl.appendChild(path);
 
-      addLabel(name, startAngle, endAngle);
+      addLabel(slice.name, slice.startAngle, slice.endAngle);
     });
   }
 
@@ -162,7 +248,19 @@
     wheelEl.appendChild(text);
   }
 
-  function spin() {
+  function renderJournal() {
+    journalListEl.innerHTML = '';
+    journalEmptyMessageEl.style.display = journal.length === 0 ? '' : 'none';
+    for (let i = journal.length - 1; i >= 0; i--) {
+      const entry = journal[i];
+      const li = document.createElement('li');
+      const date = new Date(entry.timestamp);
+      li.textContent = '« ' + entry.task + ' » → ' + entry.member + ' (' + date.toLocaleString('fr-FR') + ')';
+      journalListEl.appendChild(li);
+    }
+  }
+
+  function spin(taskName) {
     if (isSpinning) return;
     const n = members.length;
     if (n === 0) {
@@ -173,22 +271,40 @@
     isSpinning = true;
     resultEl.textContent = 'La roue tourne...';
 
-    const winnerIndex = Math.floor(Math.random() * n);
-    const sliceAngle = 360 / n;
+    // 1. Le gagnant est tiré au sort D'ABORD, par tirage pondéré, avant
+    //    toute animation : la roue n'est ensuite animée que pour visualiser
+    //    ce résultat déjà déterminé, elle ne le décide pas.
+    const weights = members.map((m) => m.weight);
+    const winnerIndex = weightedRandomIndex(weights);
 
-    const winnerSliceCenter = winnerIndex * sliceAngle + sliceAngle / 2;
+    // 2. La part du gagnant (calculée sur les poids actuels) donne l'angle
+    //    d'arrivée de l'animation.
+    const slices = computeSlices();
+    const winnerSlice = slices[winnerIndex];
+    const winnerMid = (winnerSlice.startAngle + winnerSlice.endAngle) / 2;
 
     const extraTurns = 5 * 360;
-    const targetRotation = extraTurns - winnerSliceCenter;
-
+    const targetRotation = extraTurns - winnerMid;
     currentRotation += targetRotation - (currentRotation % 360);
 
     wheelEl.style.transition = 'transform 4s cubic-bezier(0.17, 0.67, 0.35, 1)';
     wheelEl.style.transform = 'rotate(' + currentRotation + 'deg)';
 
     setTimeout(() => {
+      const winner = members[winnerIndex];
+      winner.weight = Math.max(MIN_WEIGHT, winner.weight - WEIGHT_DECREMENT);
+      saveMembers();
+
+      journal.push({ task: taskName, member: winner.name, timestamp: Date.now() });
+      saveJournal();
+
+      renderMemberList();
+      renderWheel();
+      renderJournal();
+
+      resultEl.textContent = 'Tâche « ' + taskName + ' » assignée à ' + winner.name + '.';
+      taskNameInput.value = '';
       isSpinning = false;
-      resultEl.textContent = 'Membre sélectionné : ' + members[winnerIndex];
     }, 4000);
   }
 
@@ -199,10 +315,16 @@
     memberNameInput.focus();
   });
 
-  spinButton.addEventListener('click', spin);
+  assignTaskForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const taskName = taskNameInput.value.trim();
+    if (!taskName) return;
+    spin(taskName);
+  });
 
   renderMemberList();
   renderWheel();
+  renderJournal();
 })();
 </script>
 
