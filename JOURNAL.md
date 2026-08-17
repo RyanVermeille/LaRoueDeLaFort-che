@@ -448,3 +448,90 @@ de courant. Logique de tirage pondéré et style visuel de la phase 3
 inchangés. Mise en page encore identique à la phase 3 à ce stade — le
 réagencement en trois colonnes (roue au centre) est traité séparément en
 phase 5.
+
+## Phase 5 — Réagencement en trois colonnes, la roue au centre (2026-08-17)
+
+### Demande
+
+Repositionner uniquement les blocs existants, sans toucher à la logique de
+tirage ni au style visuel (couleurs, ampoules, confettis, polices, cartes) :
+roue en pièce maîtresse au centre avec le panneau Résultat juste en dessous,
+colonne de gauche avec Équipe puis Nouvelle tâche, colonne de droite avec le
+Journal seul. Titre et sous-titre restent centrés au-dessus des trois
+colonnes. Le tout doit tenir sur un écran de laptop sans défilement de page,
+quitte à réduire légèrement le diamètre de la roue ; les listes qui
+débordent (membres, journal) doivent défiler dans leur propre bloc.
+
+### Ce qui a été construit
+
+- **Réordonnancement pur du HTML** : les trois `<section class="col">` de
+  `<main class="stage-columns">` ont été réordonnées et leurs panneaux
+  redistribués, sans créer, supprimer ni modifier le contenu d'aucun
+  panneau :
+  - colonne de gauche (`col-left`, nouvelle classe) : panneau Équipe puis
+    panneau Nouvelle tâche (inchangés, simplement déplacés depuis l'ancienne
+    troisième colonne) ;
+  - colonne centrale (`col-wheel`) : le cadre de la roue (`wheel-frame`)
+    suivi désormais directement du panneau Résultat du tirage (déplacé
+    depuis l'ancienne colonne centrale) ;
+  - colonne de droite (`col-right`, nouvelle classe) : uniquement le panneau
+    Journal des tâches attribuées.
+- **Grille ajustée pour la nouvelle répartition** : `grid-template-columns`
+  passe de `1.1fr 1fr 1fr` (roue plus large à gauche) à `1fr 1.1fr 1fr`
+  (colonne centrale légèrement plus large, pour la roue désormais au
+  centre) — mêmes proportions relatives, juste réattribuées à la bonne
+  colonne.
+- **Roue légèrement réduite** : `.wheel-frame` passe de
+  `width: min(34vw, 62vh)` à `width: min(27vw, 48vh)`, pour laisser la place
+  verticale nécessaire au panneau Résultat sous la roue dans la même colonne
+  sans provoquer de défilement de page.
+- **Centrage de la roue dans sa colonne** : `.col-wheel` n'utilise plus
+  `align-items: center; justify-content: center` (qui ne convenait qu'à un
+  unique enfant centré à la fois horizontalement et verticalement) mais
+  `align-items: stretch`, pour que le panneau Résultat s'étire sur toute la
+  largeur de la colonne comme les autres panneaux ; le cadre de la roue est
+  recentré horizontalement individuellement via `.col-wheel .wheel-frame { align-self: center; }`.
+  Le panneau Résultat garde son `flex: 1 1 0` (défini une fois pour tous les
+  `.panel`, phase 3), qui lui fait absorber tout l'espace vertical restant
+  sous la roue — exactement le même mécanisme que les autres colonnes à deux
+  panneaux empilés (Équipe/Nouvelle tâche), pas une règle nouvelle.
+
+### Choix et compromis
+
+- **Aucune règle CSS de couleur, police, ombre, animation ou bordure
+  modifiée** : seules trois valeurs ont changé (`grid-template-columns`,
+  largeur de `.wheel-frame`, et le triplet
+  `align-items`/`align-self` de `.col-wheel`) ; tout le reste de la feuille
+  de style (rideaux, ampoules, confettis, dégradés, boutons, pastilles...)
+  est resté identique caractère pour caractère.
+- **Nouvelles classes `col-left` / `col-right` purement identitaires** :
+  elles ne portent aucune règle CSS propre (comme l'ancienne `col-center`
+  qui n'en portait pas non plus) ; elles ne servent qu'à documenter
+  l'intention dans le HTML, tout l'habillage vient toujours de la classe
+  générique `.col`.
+- **Réduction de la roue à `min(27vw, 48vh)`** plutôt qu'une valeur plus
+  petite « de sécurité » : choisie empiriquique­ment pour laisser un panneau
+  Résultat confortable sans réduire excessivement la pièce maîtresse de
+  l'interface ; validée sur plusieurs résolutions (voir tests ci-dessous).
+
+### Bugs rencontrés et corrections
+
+Aucun bug bloquant. Vérifié par capture d'écran Playwright sur trois
+résolutions de laptop courantes (1366×768, 1280×720, 1440×900) : aucun
+défilement de page (`scrollHeight === clientHeight` dans les trois cas),
+disposition conforme (titre centré en haut, roue + résultat au centre,
+équipe + nouvelle tâche à gauche, journal à droite). Testé également en
+sursaturant l'équipe à 15 membres et le journal à 6 entrées sur 1366×768 :
+la page ne défile toujours pas, la liste des membres défile bien à
+l'intérieur de son propre bloc (barre de défilement visible dans la
+colonne gauche), le journal reste cadré dans sa colonne — conforme à la
+contrainte de défilement interne uniquement.
+
+### État à la fin de la phase 5
+
+Mise en page en trois colonnes avec la roue en pièce maîtresse au centre,
+le résultat du tirage juste en dessous, l'équipe et la nouvelle tâche à
+gauche, le journal à droite. Aucun changement à la logique de tirage
+pondéré ni au style visuel de la phase 3 ; uniquement du repositionnement
+de blocs et un ajustement de taille de la roue, vérifiés sans régression
+sur plusieurs résolutions de laptop.

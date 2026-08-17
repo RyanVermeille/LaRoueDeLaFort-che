@@ -134,7 +134,7 @@
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
-    grid-template-columns: 1.1fr 1fr 1fr;
+    grid-template-columns: 1fr 1.1fr 1fr;
     gap: clamp(10px, 1.6vw, 24px);
     padding: 0 clamp(72px, 10vw, 172px) clamp(10px, 1.8vh, 22px);
   }
@@ -147,13 +147,16 @@
   }
 
   .col-wheel {
-    align-items: center;
-    justify-content: center;
+    align-items: stretch;
+  }
+
+  .col-wheel .wheel-frame {
+    align-self: center;
   }
 
   .wheel-frame {
     position: relative;
-    width: min(34vw, 62vh);
+    width: min(27vw, 48vh);
     aspect-ratio: 1;
   }
 
@@ -477,28 +480,7 @@
   </header>
 
   <main class="stage-columns">
-    <section class="col col-wheel">
-      <div class="wheel-frame">
-        <svg id="bulb-ring" aria-hidden="true"></svg>
-        <svg id="wheel"></svg>
-        <div class="wheel-pointer" aria-hidden="true"></div>
-      </div>
-    </section>
-
-    <section class="col col-center">
-      <div class="panel result-card" id="result-card">
-        <h2 class="panel-title">Résultat du tirage</h2>
-        <p id="result-status" class="result-status">Aucun tirage pour l'instant.</p>
-        <p id="result-winner" class="result-winner" aria-live="polite"></p>
-      </div>
-      <div class="panel journal-card">
-        <h2 class="panel-title">Journal des tâches attribuées</h2>
-        <p id="journal-empty-message" class="journal-empty">Aucune tâche attribuée pour l'instant.</p>
-        <ol id="journal-list" class="journal-list"></ol>
-      </div>
-    </section>
-
-    <section class="col col-right">
+    <section class="col col-left">
       <div class="panel team-card">
         <h2 class="panel-title">Équipe</h2>
         <form id="add-member-form" class="add-member-form">
@@ -514,6 +496,27 @@
           <input type="text" id="task-name-input" placeholder="Nouvelle tâche" required>
           <button type="submit" id="spin-button" class="spin-btn">Lancer la roue de la Fortâche !</button>
         </form>
+      </div>
+    </section>
+
+    <section class="col col-wheel">
+      <div class="wheel-frame">
+        <svg id="bulb-ring" aria-hidden="true"></svg>
+        <svg id="wheel"></svg>
+        <div class="wheel-pointer" aria-hidden="true"></div>
+      </div>
+      <div class="panel result-card" id="result-card">
+        <h2 class="panel-title">Résultat du tirage</h2>
+        <p id="result-status" class="result-status">Aucun tirage pour l'instant.</p>
+        <p id="result-winner" class="result-winner" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="col col-right">
+      <div class="panel journal-card">
+        <h2 class="panel-title">Journal des tâches attribuées</h2>
+        <p id="journal-empty-message" class="journal-empty">Aucune tâche attribuée pour l'instant.</p>
+        <ol id="journal-list" class="journal-list"></ol>
       </div>
     </section>
   </main>
